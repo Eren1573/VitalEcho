@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 256 },
+        "email": { "type": "string", "maxLength": 256 },
+        "photoURL": { "type": "string", "maxLength": 1024 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "name"]
+    },
+    "MedicalReport": {
+      "title": "MedicalReport",
+      "description": "AI analyzed medical record, prescription, or lab report",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userEmail": { "type": "string", "maxLength": 256 },
+        "title": { "type": "string", "maxLength": 256 },
+        "reportType": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string", "maxLength": 64 },
+        "summary": { "type": "string", "maxLength": 16384 },
+        "careInstructions": { "type": "string", "maxLength": 8192 },
+        "medications": { "type": "string", "maxLength": 8192 },
+        "criticalFlags": { "type": "string", "maxLength": 4096 },
+        "fileName": { "type": "string", "maxLength": 256 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "summary", "createdAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A scheduled task or reminder",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 256 },
+        "time": { "type": "string", "maxLength": 64 },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "title", "completed", "createdAt"]
+    },
+    "Log": {
+      "title": "Log",
+      "description": "A health log entry (vitals, symptoms, sleep, etc.)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "maxLength": 64 },
+        "data": { "type": "string", "maxLength": 2048 },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["userId", "type", "data", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "users/{userId}/medical_reports/{reportId}": {
+      "schema": { "$ref": "#/entities/MedicalReport" },
+      "description": "Medical reports analyzed by Gemini and saved to user vault"
+    },
+    "users/{userId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "User schedule tasks"
+    },
+    "users/{userId}/logs/{logId}": {
+      "schema": { "$ref": "#/entities/Log" },
+      "description": "User health logs"
+    }
+  }
+}

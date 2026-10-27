@@ -1,0 +1,54 @@
+cat << 'INNER_EOF' > chat_replacement.txt
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const handleMicClick = async () => {
+    if (listening) {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      }
+      setListening(false);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64Audio = reader.result as string;
+          try {
+            setCommand("Transcribing...");
+            const res = await api.transcribeAudio(base64Audio);
+            setCommand(res.text);
+          } catch (e) {
+            setCommand("");
+            alert("Failed to transcribe audio.");
+          }
+        };
+      };
+
+      mediaRecorder.start();
+      setListening(true);
+      setCommand('');
+    } catch (e) {
+      console.error(e);
+      alert("Microphone access denied.");
+      setListening(false);
+    }
+  };
+INNER_EOF
+sed -i -e '/const handleMicClick = () => {/,/  };/c\' -e "$(cat chat_replacement.txt | sed 's/$/\\/')" -e 's/\\$//' src/components/ChatTab.tsx

@@ -1,0 +1,6 @@
+{
+  "name": "VitalEcho",
+  "description": "A proactive, AI-driven health companion for tracking vitals, mood, and sleep with voice and face scanning capabilities.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
