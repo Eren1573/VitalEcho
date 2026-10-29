@@ -5,7 +5,7 @@ import { api, getCurrentUser } from '../lib/api';
 import { useSettings } from '../contexts/SettingsContext';
 
 export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: boolean, onResetAutoStart?: () => void }) {
-  const { t } = useSettings();
+  const { t, language, setLanguage } = useSettings();
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [command, setCommand] = useState<string>('');
@@ -36,11 +36,24 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
       const safeText = String(text || '');
       const cleanText = safeText.replace(/[*_~`#]/g, '').replace(/\n/g, ' ');
       const utterance = new SpeechSynthesisUtterance(cleanText);
+
+      const isTelugu = /[\u0C00-\u0C7F]/.test(cleanText) || language === 'Telugu';
+      const isHindi = /[\u0900-\u097F]/.test(cleanText) || language === 'Hindi';
+
+      utterance.lang = isTelugu ? 'te-IN' : isHindi ? 'hi-IN' : 'en-US';
       
       const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => 
-        v.lang.includes('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Alex'))
-      ) || voices[0];
+      let preferredVoice = null;
+      if (isTelugu) {
+        preferredVoice = voices.find(v => v.lang.startsWith('te'));
+      } else if (isHindi) {
+        preferredVoice = voices.find(v => v.lang.startsWith('hi'));
+      }
+      if (!preferredVoice) {
+        preferredVoice = voices.find(v => 
+          v.lang.includes('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Alex'))
+        ) || voices[0];
+      }
       if (preferredVoice) utterance.voice = preferredVoice;
       
       utterance.onend = () => setSpeaking(false);
@@ -105,7 +118,7 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
           const base64Audio = (reader.result as string) || '';
           try {
             setTranscribing(true);
-            const res = await api.transcribeAudio(base64Audio);
+            const res = await api.transcribeAudio(base64Audio, language);
             if (res?.text && res.text.trim()) {
               setCommand(res.text.trim());
             }
@@ -151,7 +164,14 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
         recognitionRef.current = recognition;
         recognition.continuous = false;
         recognition.interimResults = true;
-        recognition.lang = 'en-US';
+        
+        // Multilingual support: map setting to recognition language code
+        const langMap: Record<string, string> = {
+          English: 'en-US',
+          Hindi: 'hi-IN',
+          Telugu: 'te-IN'
+        };
+        recognition.lang = langMap[language] || 'en-US';
 
         recognition.onstart = () => {
           setListening(true);
@@ -211,6 +231,7 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
                     type: action.type === 'log_vitals' ? 'vitals' : 'symptoms',
                     data: `${action.metric || action.symptom || 'Vitals'}: ${action.value || action.severity || 'Logged'}`
                  });
+                 window.dispatchEvent(new CustomEvent('vital_logs_updated'));
                  applied.push(`Logged ${action.metric || action.symptom || 'Vitals'} (${action.value || action.severity || 'Recorded'})`);
              } else if (action.type === 'complete_task') {
                  const schedule = await api.getSchedule();
@@ -218,10 +239,31 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
                  const task = schedule.find(t => String(t.title || '').toLowerCase().includes(taskName) || taskName.includes(String(t.title || '').toLowerCase()));
                  if (task) {
                      if (!task.completed) await api.toggleTask(task.id);
+                     window.dispatchEvent(new CustomEvent('vital_tasks_updated'));
+                     window.dispatchEvent(new CustomEvent('vital_logs_updated'));
                      applied.push(`Marked task completed: ${task.title}`);
                  } else {
                      applied.push(`Recorded note for task: ${action.taskName}`);
                  }
+             } else if (action.type === 'log_activity') {
+                 await api.logData({
+                    type: 'activity',
+                    data: `${action.activity || 'Activity'}: ${action.duration || '30 mins'}${action.steps ? ` (${action.steps} steps)` : ''}`
+                 });
+                 try {
+                   const actKey = `vital_activities_${user?.userId || 'demo'}`;
+                   const existing = JSON.parse(localStorage.getItem(actKey) || '[]');
+                   existing.unshift({
+                     type: action.activity || 'Activity',
+                     duration: action.duration || '30 mins',
+                     steps: action.steps || '',
+                     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                   });
+                   localStorage.setItem(actKey, JSON.stringify(existing));
+                   window.dispatchEvent(new CustomEvent('vital_activity_updated'));
+                 } catch (e) {}
+                 window.dispatchEvent(new CustomEvent('vital_logs_updated'));
+                 applied.push(`Logged activity: ${action.activity || 'Activity'} (${action.duration || '30 mins'})`);
              }
           } catch(err) {
              console.error('Action error:', action, err);
@@ -229,9 +271,15 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
         }
       }
 
-      const reply = await api.chat(userText, 'flash', chatLog);
+      const reply = await api.chat(userText, 'flash', chatLog, language);
       
-      let aiText = reply?.text || reply?.response || "I am here to assist you with your health and daily routine. How can I help today?";
+      let aiText = reply?.text || reply?.response || (
+        language === 'Telugu' 
+          ? "నమస్కారం! మీ ఆరోగ్య వివరాలు భద్రపరచబడ్డాయి. నేను మీకు ఎలా సహాయపడగలను?"
+          : language === 'Hindi'
+          ? "नमस्ते! आपकी स्वास्थ्य जानकारी सुरक्षित दर्ज कर ली गई है। मैं आपकी कैसे मदद कर सकता हूँ?"
+          : "I am here to assist you with your health and daily routine. How can I help today?"
+      );
       if (applied.length > 0) {
         aiText += `\n\n**Updates saved:**\n- ${applied.join('\n- ')}`;
       }
@@ -254,8 +302,11 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
 
   useEffect(() => {
     if (autoStart) {
-      handleMicClick();
-      if (onResetAutoStart) onResetAutoStart();
+      const timer = setTimeout(() => {
+        handleMicClick();
+        if (onResetAutoStart) onResetAutoStart();
+      }, 350);
+      return () => clearTimeout(timer);
     }
   }, [autoStart]);
 
@@ -293,7 +344,26 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/60">
+          {/* Quick Language Toggle for Elders & Caretakers */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/90 text-xs">
+            {(['English', 'Hindi', 'Telugu'] as const).map(lang => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => setLanguage(lang)}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                  language === lang 
+                    ? 'bg-emerald-600 text-white shadow-xs font-bold' 
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title={`Switch speaking language to ${lang}`}
+              >
+                {lang === 'English' ? 'EN' : lang === 'Hindi' ? 'हिन्दी' : 'తెలుగు'}
+              </button>
+            ))}
+          </div>
+
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/60">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-xs font-semibold text-emerald-700">Online</span>
           </div>
@@ -323,7 +393,9 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
                 ) : (
                   <>
                     <Mic className="w-9 h-9" />
-                    <span className="text-[10px] font-bold mt-1 tracking-wide">Tap to Speak</span>
+                    <span className="text-[10px] font-bold mt-1 tracking-wide">
+                      {language === 'Telugu' ? 'మాట్లాడండి' : language === 'Hindi' ? 'बोलें' : 'Tap to Speak'}
+                    </span>
                   </>
                 )}
               </button>
@@ -331,32 +403,83 @@ export default function ChatTab({ autoStart, onResetAutoStart }: { autoStart?: b
             
             <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm text-center">
               <h2 className="text-xl font-bold text-slate-800 mb-2 flex items-center justify-center gap-1.5">
-                Hello, {user?.name || 'friend'}! <span className="text-2xl">👋</span>
+                {language === 'Telugu' ? `నమస్కారం, ${user?.name || 'మిత్రమా'}!` : language === 'Hindi' ? `नमस्ते, ${user?.name || 'मित्र'}!` : `Hello, ${user?.name || 'friend'}!`} 
+                <span className="text-2xl">👋</span>
               </h2>
               <p className="text-slate-600 text-sm leading-relaxed mb-4">
-                I'm listening. You can tell me how you feel, record your vitals, or ask any medical and health questions.
+                {language === 'Telugu'
+                  ? 'నేను వింటున్నాను. మీ ఆరోగ్యం, వాకింగ్, మందులు లేదా నిద్ర గురించి తెలుగులో మాట్లాడండి లేదా టైప్ చేయండి.'
+                  : language === 'Hindi'
+                  ? 'मैं सुन रहा हूँ। अपने स्वास्थ्य, वॉक, दवाइयों या दिनचर्या के बारे में हिंदी में बोलें या टाइप करें।'
+                  : "I'm listening. You can tell me how you feel, log your activities and vitals, or ask medical questions."}
               </p>
               
               {/* Quick Prompt Pills */}
               <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2 justify-center">
-                <button
-                  onClick={() => handleSend("I slept for 8 hours last night, how is that?")}
-                  className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
-                >
-                  "I slept for 8 hours"
-                </button>
-                <button
-                  onClick={() => handleSend("Log my blood pressure as 120/80")}
-                  className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
-                >
-                  "Log my BP: 120/80"
-                </button>
-                <button
-                  onClick={() => handleSend("Remind me to take my evening medicine")}
-                  className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
-                >
-                  "Evening medicine reminder"
-                </button>
+                {language === 'Telugu' ? (
+                  <>
+                    <button
+                      onClick={() => handleSend("నేను 30 నిమిషాలు వాకింగ్ చేసాను")}
+                      className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      "30 నిమిషాలు వాకింగ్ చేసాను"
+                    </button>
+                    <button
+                      onClick={() => handleSend("రక్తపోటు 120/80 నమోదు చేయండి")}
+                      className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      "బీపీ 120/80 నమోదు చేయండి"
+                    </button>
+                    <button
+                      onClick={() => handleSend("నేను రాత్రి 8 గంటలు బాగా నిద్రపోయాను")}
+                      className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      "8 గంటలు నిద్రపోయాను"
+                    </button>
+                  </>
+                ) : language === 'Hindi' ? (
+                  <>
+                    <button
+                      onClick={() => handleSend("मैंने आज 30 मिनट वॉक किया")}
+                      className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      "30 मिनट वॉक किया"
+                    </button>
+                    <button
+                      onClick={() => handleSend("बीपी 120/80 दर्ज करें")}
+                      className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      "बीपी 120/80 दर्ज करें"
+                    </button>
+                    <button
+                      onClick={() => handleSend("मुझे 8 घंटे अच्छी नींद आई")}
+                      className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      "8 घंटे अच्छी नींद आई"
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleSend("Walked for 30 minutes in the morning")}
+                      className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      "Walked for 30 minutes"
+                    </button>
+                    <button
+                      onClick={() => handleSend("Log my blood pressure as 120/80")}
+                      className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      "Log BP: 120/80"
+                    </button>
+                    <button
+                      onClick={() => handleSend("I slept for 8 hours last night, how is that?")}
+                      className="text-xs bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                    >
+                      "I slept for 8 hours"
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

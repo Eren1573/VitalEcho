@@ -23,7 +23,8 @@ import {
   Volume2,
   Trash2,
   Check,
-  Clock
+  Clock,
+  Activity
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useSettings } from '../contexts/SettingsContext';
@@ -69,6 +70,11 @@ export default function TrackTab() {
   const [weight, setWeight] = useState('');
   const [toast, setToast] = useState('');
   
+  const [activityModal, setActivityModal] = useState(false);
+  const [activityType, setActivityType] = useState('Walking');
+  const [activityDuration, setActivityDuration] = useState('30');
+  const [activitySteps, setActivitySteps] = useState('');
+
   const [waterModal, setWaterModal] = useState(false);
   const [waterAmount, setWaterAmount] = useState('');
   const [waterUnit, setWaterUnit] = useState('glasses');
@@ -328,10 +334,14 @@ export default function TrackTab() {
           value: target.name
         });
         fetchLogs();
+        window.dispatchEvent(new CustomEvent('vital_tasks_updated'));
+        window.dispatchEvent(new CustomEvent('vital_logs_updated'));
         setToast(`✓ ${target.name} logged as taken!`);
         setTimeout(() => setToast(''), 3000);
       } catch (e) {}
     } else if (target && !target.completed) {
+      window.dispatchEvent(new CustomEvent('vital_tasks_updated'));
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
       setToast(`Marked ${target.name} as pending`);
       setTimeout(() => setToast(''), 2500);
     }
@@ -363,6 +373,8 @@ export default function TrackTab() {
         repeatDaily: newMed.repeatDaily
       });
       fetchTasks();
+      window.dispatchEvent(new CustomEvent('vital_tasks_updated'));
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
     } catch (e) {}
 
     setNewMedName('');
@@ -385,6 +397,7 @@ export default function TrackTab() {
     });
     setMedications(updated);
     saveMedicationsToStorage(updated);
+    window.dispatchEvent(new CustomEvent('vital_tasks_updated'));
     setToast('Everyday reminder preference updated');
     setTimeout(() => setToast(''), 2500);
   };
@@ -393,6 +406,8 @@ export default function TrackTab() {
     const updated = medications.filter(m => String(m.id) !== String(medId));
     setMedications(updated);
     saveMedicationsToStorage(updated);
+    window.dispatchEvent(new CustomEvent('vital_tasks_updated'));
+    window.dispatchEvent(new CustomEvent('vital_logs_updated'));
     setToast('Medication removed from list');
     setTimeout(() => setToast(''), 2500);
   };
@@ -419,6 +434,8 @@ export default function TrackTab() {
     setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
     try {
       await api.toggleTask(id);
+      window.dispatchEvent(new CustomEvent('vital_tasks_updated'));
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
     } catch (e) {
       fetchTasks(); // revert on failure
     }
@@ -447,6 +464,8 @@ export default function TrackTab() {
       
       // Update local state
       fetchTasks();
+      window.dispatchEvent(new CustomEvent('vital_tasks_updated'));
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
       
       // Reset
       setReminderTitle('');
@@ -489,11 +508,42 @@ export default function TrackTab() {
     setSleepComment(comment);
     try {
       await api.logData({ type: 'sleep', data: hours });
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
       fetchLogs();
     } catch (e) {}
     
     setLoadingSleep(false);
     setToast('Sleep logged successfully');
+    setTimeout(() => setToast(''), 3000);
+  };
+
+  const handleActivitySubmit = async () => {
+    if (!activityDuration && !activityType) return;
+    try {
+      const type = activityType || 'Walking';
+      const duration = activityDuration || '30';
+      const dataStr = `${type} - ${duration} mins${activitySteps ? ` (${activitySteps} steps)` : ''}`;
+      
+      await api.logData({ 
+        type: 'activity', 
+        data: dataStr,
+        value: duration
+      });
+
+      localStorage.setItem('vital_user_activity', dataStr);
+      localStorage.setItem('vital_user_activity_mins', duration);
+
+      window.dispatchEvent(new CustomEvent('vital_activity_updated', { detail: dataStr }));
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
+
+      fetchLogs();
+    } catch (e) {}
+
+    setActivityModal(false);
+    setActivityType('Walking');
+    setActivityDuration('30');
+    setActivitySteps('');
+    setToast('Activity logged successfully');
     setTimeout(() => setToast(''), 3000);
   };
 
@@ -516,6 +566,7 @@ export default function TrackTab() {
       // Dispatch real-time updates for Settings tab and other components
       window.dispatchEvent(new CustomEvent('vital_weight_updated', { detail: formattedWeight }));
       window.dispatchEvent(new CustomEvent('vital_user_updated', { detail: { weight: formattedWeight } }));
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
 
       fetchLogs();
     } catch (e) {}
@@ -530,6 +581,7 @@ export default function TrackTab() {
     try {
       const dataStr = `${waterAmount} ${waterUnit}`;
       await api.logData({ type: 'water', data: dataStr });
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
       fetchLogs();
     } catch (e) {}
     setWaterModal(false);
@@ -542,6 +594,7 @@ export default function TrackTab() {
     if (!symptomText) return;
     try {
       await api.logData({ type: 'symptom', data: symptomText });
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
       fetchLogs();
     } catch (e) {}
     setSymptomsModal(false);
@@ -554,6 +607,7 @@ export default function TrackTab() {
     if (!bloodSugar && !bloodPressure && !heartRate) return;
     try {
       await api.logData({ type: 'vitals', data: { bloodSugar, bloodPressure, heartRate } });
+      window.dispatchEvent(new CustomEvent('vital_logs_updated'));
       fetchLogs();
     } catch (e) {}
     setVitalsModal(false);
@@ -787,14 +841,97 @@ export default function TrackTab() {
           <h3 className="font-bold text-slate-900">{t('quick_log')}</h3>
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-          <Pill icon={PillIcon} label="Meds" color="text-fuchsia-500" onClick={() => { setQuickMedModal(true); setWaterModal(false); setSleepModal(false); setWeightModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
-          <Pill icon={Droplet} label={t('water')} color="text-blue-500" onClick={() => { setWaterModal(!waterModal); setWaterAmount(''); setSleepModal(false); setWeightModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
-          <Pill icon={Moon} label={t('sleep')} color="text-indigo-500" onClick={() => { setSleepModal(!sleepModal); setSleepComment(''); setSleepHours(''); setWaterModal(false); setWeightModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
-          <Pill icon={Scale} label={t('weight')} color="text-emerald-600" onClick={() => { setWeightModal(!weightModal); setWeight(''); setWaterModal(false); setSleepModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
-          <Pill icon={Smile} label={t('mood')} color="text-amber-500" onClick={() => { openMoodModal(); setWaterModal(false); setSleepModal(false); setWeightModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
-          <Pill icon={Thermometer} label={t('symptoms')} color="text-rose-500" onClick={() => { setSymptomsModal(!symptomsModal); setSymptomText(''); setWaterModal(false); setSleepModal(false); setWeightModal(false); setVitalsModal(false); }} />
-          <Pill icon={Heart} label={t('vitals')} color="text-red-500" onClick={() => { setVitalsModal(!vitalsModal); setBloodSugar(''); setBloodPressure(''); setHeartRate(''); setWaterModal(false); setSleepModal(false); setWeightModal(false); setSymptomsModal(false); }} />
+          <Pill icon={PillIcon} label="Meds" color="text-fuchsia-500" onClick={() => { setQuickMedModal(true); setActivityModal(false); setWaterModal(false); setSleepModal(false); setWeightModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
+          <Pill icon={Activity} label="Activity" color="text-amber-500" onClick={() => { setActivityModal(!activityModal); setWaterModal(false); setSleepModal(false); setWeightModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
+          <Pill icon={Droplet} label={t('water')} color="text-blue-500" onClick={() => { setWaterModal(!waterModal); setWaterAmount(''); setActivityModal(false); setSleepModal(false); setWeightModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
+          <Pill icon={Moon} label={t('sleep')} color="text-indigo-500" onClick={() => { setSleepModal(!sleepModal); setSleepComment(''); setSleepHours(''); setActivityModal(false); setWaterModal(false); setWeightModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
+          <Pill icon={Scale} label={t('weight')} color="text-emerald-600" onClick={() => { setWeightModal(!weightModal); setWeight(''); setActivityModal(false); setWaterModal(false); setSleepModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
+          <Pill icon={Smile} label={t('mood')} color="text-amber-500" onClick={() => { openMoodModal(); setActivityModal(false); setWaterModal(false); setSleepModal(false); setWeightModal(false); setSymptomsModal(false); setVitalsModal(false); }} />
+          <Pill icon={Thermometer} label={t('symptoms')} color="text-rose-500" onClick={() => { setSymptomsModal(!symptomsModal); setSymptomText(''); setActivityModal(false); setWaterModal(false); setSleepModal(false); setWeightModal(false); setVitalsModal(false); }} />
+          <Pill icon={Heart} label={t('vitals')} color="text-red-500" onClick={() => { setVitalsModal(!vitalsModal); setBloodSugar(''); setBloodPressure(''); setHeartRate(''); setActivityModal(false); setWaterModal(false); setSleepModal(false); setWeightModal(false); setSymptomsModal(false); }} />
         </div>
+        
+        {/* Inline Activity Log */}
+        {activityModal && (
+           <div className="mt-2 p-4 bg-amber-50 border border-amber-200 rounded-xl animate-in fade-in slide-in-from-top-2 relative">
+             <button onClick={() => setActivityModal(false)} className="absolute top-2 right-2 text-amber-500 hover:text-amber-700">
+               <X className="w-4 h-4" />
+             </button>
+             <h4 className="text-sm font-bold text-amber-900 mb-2 flex items-center gap-1.5">
+               <Activity className="w-4 h-4 text-amber-600" />
+               Log Physical Activity & Exercise
+             </h4>
+
+             {/* Quick Select Preset Chips */}
+             <div className="flex flex-wrap gap-1.5 mb-3">
+               {[
+                 { name: 'Walking', duration: '30' },
+                 { name: 'Morning Yoga', duration: '20' },
+                 { name: 'Gardening', duration: '30' },
+                 { name: 'Stretching', duration: '15' },
+                 { name: 'Gym / Workout', duration: '40' },
+                 { name: 'Cycling', duration: '20' }
+               ].map(preset => (
+                 <button
+                   key={preset.name}
+                   type="button"
+                   onClick={() => {
+                     setActivityType(preset.name);
+                     setActivityDuration(preset.duration);
+                   }}
+                   className={`px-2.5 py-1 text-xs rounded-lg border font-medium transition-all ${
+                     activityType === preset.name 
+                       ? 'bg-amber-600 text-white border-amber-600 shadow-xs' 
+                       : 'bg-white text-slate-700 border-amber-200 hover:bg-amber-100/60'
+                   }`}
+                 >
+                   {preset.name} ({preset.duration}m)
+                 </button>
+               ))}
+             </div>
+
+             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+               <div>
+                 <label className="text-[11px] font-semibold text-amber-900 block mb-0.5">Activity Type</label>
+                 <input 
+                   type="text" 
+                   placeholder="e.g. Walking, Yoga" 
+                   className="w-full bg-white border border-amber-200 rounded-lg text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-slate-800"
+                   value={activityType}
+                   onChange={e => setActivityType(e.target.value)}
+                 />
+               </div>
+               <div>
+                 <label className="text-[11px] font-semibold text-amber-900 block mb-0.5">Duration (minutes)</label>
+                 <input 
+                   type="number" 
+                   placeholder="e.g. 30" 
+                   className="w-full bg-white border border-amber-200 rounded-lg text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-slate-800"
+                   value={activityDuration}
+                   onChange={e => setActivityDuration(e.target.value)}
+                 />
+               </div>
+               <div>
+                 <label className="text-[11px] font-semibold text-amber-900 block mb-0.5">Steps (optional)</label>
+                 <div className="flex gap-2">
+                   <input 
+                     type="number" 
+                     placeholder="e.g. 3500" 
+                     className="flex-1 bg-white border border-amber-200 rounded-lg text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-slate-800"
+                     value={activitySteps}
+                     onChange={e => setActivitySteps(e.target.value)}
+                   />
+                   <button 
+                     onClick={handleActivitySubmit}
+                     className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded-lg transition-colors text-sm shadow-xs self-end"
+                   >
+                     Save
+                   </button>
+                 </div>
+               </div>
+             </div>
+           </div>
+        )}
         
         {/* Inline Water Log */}
         {waterModal && (

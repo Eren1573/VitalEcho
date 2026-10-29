@@ -90,19 +90,29 @@ export default function CaretakerPulseWidget({ onNavigate }: CaretakerPulseWidge
     loadDigest();
 
     let debounceTimer: any = null;
-    const handleUserUpdate = (e: any) => {
-      const updated = e.detail || getCurrentUser();
-      setUser(updated);
+    const handleSyncUpdate = (e: any) => {
+      if (e?.detail) {
+        setUser(getCurrentUser());
+      }
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         loadDigest();
-      }, 500);
+      }, 350);
     };
-    window.addEventListener('vital_user_updated', handleUserUpdate);
 
-    // Cleanup speech on unmount
+    window.addEventListener('vital_user_updated', handleSyncUpdate);
+    window.addEventListener('vital_logs_updated', handleSyncUpdate);
+    window.addEventListener('vital_activity_updated', handleSyncUpdate);
+    window.addEventListener('vital_tasks_updated', handleSyncUpdate);
+    window.addEventListener('vital_weight_updated', handleSyncUpdate);
+
+    // Cleanup speech and listeners on unmount
     return () => {
-      window.removeEventListener('vital_user_updated', handleUserUpdate);
+      window.removeEventListener('vital_user_updated', handleSyncUpdate);
+      window.removeEventListener('vital_logs_updated', handleSyncUpdate);
+      window.removeEventListener('vital_activity_updated', handleSyncUpdate);
+      window.removeEventListener('vital_tasks_updated', handleSyncUpdate);
+      window.removeEventListener('vital_weight_updated', handleSyncUpdate);
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
@@ -497,16 +507,20 @@ export default function CaretakerPulseWidget({ onNavigate }: CaretakerPulseWidge
             </div>
 
             {/* Activity */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xs flex flex-col justify-between">
+            <div 
+              onClick={() => onNavigate ? onNavigate('track') : null}
+              className="bg-white border border-slate-200 hover:border-amber-300 rounded-2xl p-3.5 shadow-xs flex flex-col justify-between cursor-pointer transition-colors"
+              title="Click to view or log activity in Track"
+            >
               <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
                 <span className="font-semibold text-[11px]">ACTIVITY</span>
                 <Activity className="w-4 h-4 text-amber-500" />
               </div>
-              <span className="text-xs font-bold text-slate-800 truncate">
-                {digest?.telemetry?.activity || '45 mins walking'}
+              <span className={`text-xs font-bold truncate ${digest?.telemetry?.activity && digest.telemetry.activity !== 'No activity logged' && digest.telemetry.activity !== 'No logs recorded' ? 'text-slate-800' : 'text-slate-400'}`}>
+                {digest?.telemetry?.activity && digest.telemetry.activity !== 'No logs recorded' ? digest.telemetry.activity : 'No activity logged'}
               </span>
               <span className="text-[10px] text-amber-700 font-semibold mt-1">
-                Active today
+                {digest?.telemetry?.activity && digest.telemetry.activity !== 'No activity logged' && digest.telemetry.activity !== 'No logs recorded' ? '✓ Active today' : '+ Tap to log'}
               </span>
             </div>
           </div>

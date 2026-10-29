@@ -267,18 +267,24 @@ export const api = {
     }
     return updatedTask;
   },
-  chat: async (message: string, modelType: 'flash' | 'pro' = 'flash', context: any[] = []) => {
+  chat: async (message: string, modelType: 'flash' | 'pro' = 'flash', context: any[] = [], language: string = 'English') => {
     try {
       const res = await fetch('/api/gemini/chat', {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ message, modelType, context })
+        body: JSON.stringify({ message, modelType, context, language })
       });
       if (!res.ok) throw new Error('Chat failed');
       return await res.json();
     } catch (e) {
+      const isTelugu = language === 'Telugu';
+      const isHindi = language === 'Hindi';
       return { 
-        text: "Hello! I am your VitalEcho companion. Your vitals and daily schedule are in good standing. How can I assist you with your health today?" 
+        text: isTelugu 
+          ? "నమస్కారం! నేను మీ వైటల్ ఎకో ఆరోగ్య సహాయకుడిని. మీ ఆరోగ్యం, మందులు మరియు ఆహారం గురించి నేను ఎలా సహాయపడగలను?" 
+          : isHindi 
+          ? "नमस्ते! मैं आपका वाइटल-इको स्वास्थ्य साथी हूँ। मैं आपके स्वास्थ्य, दवाओं या दिनचर्या में कैसे मदद कर सकता हूँ?" 
+          : "Hello! I am your VitalEcho companion. Your vitals and daily schedule are in good standing. How can I assist you with your health today?" 
       };
     }
   },
@@ -347,12 +353,12 @@ export const api = {
       };
     }
   },
-  transcribeAudio: async (base64Audio: string) => {
+  transcribeAudio: async (base64Audio: string, language: string = 'English') => {
     try {
       const res = await fetch('/api/gemini/transcribe', {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ audio: base64Audio })
+        body: JSON.stringify({ audio: base64Audio, language })
       });
       if (!res.ok) throw new Error('Audio transcription failed');
       const data = await res.json();

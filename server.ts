@@ -150,18 +150,30 @@ async function startServer() {
 
   // 3. Gemini AI Conversational Engine
   app.post("/api/gemini/chat", requireAuth, async (req: AuthRequest, res: any) => {
-    const { message = "", modelType = "flash", context = [] } = req.body;
+    const { message = "", modelType = "flash", context = [], language = "English" } = req.body;
     const userMessage = String(message || "").trim();
+
+    // Auto-detect language if script matches Hindi or Telugu
+    let activeLanguage = language;
+    if (/[\u0900-\u097F]/.test(userMessage)) activeLanguage = "Hindi";
+    if (/[\u0C00-\u0C7F]/.test(userMessage)) activeLanguage = "Telugu";
 
     try {
       const preferredModel = "gemini-3.1-flash-lite";
 
-      const systemInstruction = `You are VitalEcho, an expert, friendly personal health and wellness companion.
+      const systemInstruction = `You are VitalEcho, an expert, caring, and respectful personal health and wellness companion designed especially for elders and their families.
+CRITICAL LANGUAGE MANDATE:
+- Active Language: ${activeLanguage}.
+- If the user writes or speaks in Hindi, or if active language is Hindi: YOU MUST RESPOND ENTIRELY IN NATURAL, SIMPLE HINDI (Devanagari script, e.g. 'नमस्ते! आपकी सेहत...').
+- If the user writes or speaks in Telugu, or if active language is Telugu: YOU MUST RESPOND ENTIRELY IN NATURAL, SIMPLE TELUGU (Telugu script, e.g. 'నమస్కారం! మీ ఆరోగ్యం...').
+- If English: respond in clear, accessible English.
+- Treat elders with utmost respect and reassurance.
+
 CRITICAL CONCISENESS RULE:
 - Keep ALL responses concise, friendly, and practical—strictly 4 to 6 lines or bullet points total.
 - NEVER write 20-25 line essays, long introductions, or rambling paragraphs.
 - Deliver straight-to-the-point, high-value advice with 3-4 bullet points and a brief takeaway.
-- When the user mentions sleep (e.g., 8 hours), acknowledge it warmly, list 3 key health benefits, and give 1 quick morning tip in 5 lines total.`;
+- When the user mentions walking or exercise or sleep, acknowledge it warmly, list key benefits, and give 1 quick tip in 5 lines total.`;
 
       // Build valid alternating conversation turns for Gemini
       const contents: any[] = [];
@@ -204,22 +216,40 @@ CRITICAL CONCISENESS RULE:
       return res.json({ text: response.text });
     } catch (err: any) {
       console.error("Chat error:", err);
-      // Graceful clinical conversational fallback when network or quota is unavailable
+      // Graceful clinical conversational fallback tailored to user's language
       const lower = userMessage.toLowerCase();
       let reply = "I am here to support your daily wellness, nutrition, vitals, and routines. How can I assist you with your health today?";
 
-      if (lower.includes("pull day") || lower.includes("gym") || lower.includes("workout") || lower.includes("exercise") || lower.includes("eat")) {
-        reply = "For post-workout nutrition after a pull day (back & biceps), your body needs fast muscle protein synthesis and glycogen replenishment:\n\n1. **High-Quality Protein (25-35g):** Grilled chicken breast, eggs/egg whites, whey protein shake, salmon, or Greek yogurt to repair muscle micro-tears.\n2. **Complex Carbohydrates (40-60g):** Brown rice, oats, sweet potato, or quinoa to restore depleted glycogen stores.\n3. **Hydration & Electrolytes:** Rehydrate with 500-750ml water, adding a pinch of salt or electrolyte water.\n4. **Timing:** Consume your meal within 45 to 90 minutes post-workout for optimal recovery.";
-      } else if (lower.includes("water") || lower.includes("drink") || lower.includes("hydration")) {
-        reply = "Hydration is vital for maintaining steady circulation and energy. Aim for 2 to 2.5 liters of water throughout your day, and remember to log each glass in your Track tab!";
-      } else if (lower.includes("medicine") || lower.includes("medication") || lower.includes("pill")) {
-        reply = "Be sure to take your prescribed medications with water or food as indicated by your physician. You can mark them completed directly in the Daily Prescriptions schedule.";
-      } else if (lower.includes("sleep") || lower.includes("tired") || lower.includes("bed")) {
-        reply = "Restful sleep of 7 to 9 hours is essential for cardiovascular recovery, immune strength, and muscle repair. A cool, dark bedroom and winding down 30 minutes before sleep will help.";
-      } else if (lower.includes("blood pressure") || lower.includes("bp") || lower.includes("pulse") || lower.includes("heart")) {
-        reply = "Your vitals are monitored. A resting pulse between 60 to 90 beats per minute and standard blood pressure around 120/80 mmHg indicate healthy equilibrium.";
-      } else if (lower.includes("headache") || lower.includes("dizzy") || lower.includes("pain")) {
-        reply = "I recommend resting in a calm, shaded spot with a fresh glass of water. If discomfort persists or intensifies, please contact your primary doctor or use the Emergency SOS button.";
+      if (activeLanguage === "Telugu" || /[\u0C00-\u0C7F]/.test(userMessage)) {
+        if (lower.includes("నడక") || lower.includes("walk") || lower.includes("వ్యాయామం") || lower.includes("gym")) {
+          reply = "రోజూ నడక మరియు వ్యాయామం గుండె ఆరోగ్యానికి మరియు శక్తికి చాలా మంచిది:\n\n1. **శరీర రికవరీ:** తగినంత విశ్రాంతి తీసుకోండి.\n2. **నీటి వినియోగం:** వ్యాయామం తర్వాత 1-2 గ్లాసుల మంచినీరు త్రాగండి.\n3. **సమయపాలన:** ప్రతిరోజూ క్రమం తప్పకుండా కొనసాగించండి.\n4. **మంచి ఆహారం:** పండ్లు, గుడ్లు లేదా పప్పుదినుసులు తీసుకోండి.";
+        } else if (lower.includes("మందు") || lower.includes("medicine")) {
+          reply = "దయచేసి డాక్టర్ సూచించిన సమయానికి మీ మందులను మంచినీటితో తీసుకోండి. డైలీ షెడ్యూల్‌లో పూర్తి అయినట్లు గుర్తించండి.";
+        } else {
+          reply = "నమస్కారం! మీ ఆరోగ్యం, మందులు మరియు ఆహారం గురించి నేను సహాయపడటానికి సిద్ధంగా ఉన్నాను. ఈ రోజు మీకు ఎలా సహాయపడగలను?";
+        }
+      } else if (activeLanguage === "Hindi" || /[\u0900-\u097F]/.test(userMessage)) {
+        if (lower.includes("वॉक") || lower.includes("टहलना") || lower.includes("कसरत") || lower.includes("व्यायाम")) {
+          reply = "रोजाना टहलना और हल्का व्यायाम बुजुर्गों और स्वास्थ्य के लिए अत्यंत लाभकारी है:\n\n1. **हार्ट हेल्थ:** नियमित वॉक से ब्लड प्रेशर और शुगर नियंत्रित रहता है।\n2. **हाइड्रेशन:** व्यायाम के बाद 1-2 गिलास ताजा पानी अवश्य पिएं।\n3. **समय:** सुबह या शाम को शांत वातावरण में वॉक करें।\n4. **आराम:** थकान महसूस होने पर तुरंत थोड़ा आराम करें।";
+        } else if (lower.includes("दवा") || lower.includes("medicine")) {
+          reply = "कृपया अपनी नियमित दवाएं डॉक्टर के निर्देशानुसार समय पर पानी के साथ लें। आप इसे अपने शेड्यूल में टिक कर सकते हैं।";
+        } else {
+          reply = "नमस्ते! मैं आपके स्वास्थ्य, पोषण, दवाओं और दिनचर्या में सहायता के लिए यहाँ हूँ। आज मैं आपकी क्या मदद कर सकता हूँ?";
+        }
+      } else {
+        if (lower.includes("pull day") || lower.includes("gym") || lower.includes("workout") || lower.includes("exercise") || lower.includes("eat") || lower.includes("walk")) {
+          reply = "Physical activity and steady recovery are essential for daily vitality:\n\n1. **Hydration & Electrolytes:** Drink 500ml water after your walk or workout.\n2. **Nourishing Food:** Include clean protein (eggs, dal, yogurt) and complex carbs for recovery.\n3. **Gentle Stretching:** Relieve muscle tightness and support joint flexibility.\n4. **Consistency:** Maintaining a routine of 20-30 minutes daily keeps cardiovascular health optimal.";
+        } else if (lower.includes("water") || lower.includes("drink") || lower.includes("hydration")) {
+          reply = "Hydration is vital for maintaining steady circulation and energy. Aim for 2 to 2.5 liters of water throughout your day, and remember to log each glass in your Track tab!";
+        } else if (lower.includes("medicine") || lower.includes("medication") || lower.includes("pill")) {
+          reply = "Be sure to take your prescribed medications with water or food as indicated by your physician. You can mark them completed directly in the Daily Prescriptions schedule.";
+        } else if (lower.includes("sleep") || lower.includes("tired") || lower.includes("bed")) {
+          reply = "Restful sleep of 7 to 9 hours is essential for cardiovascular recovery, immune strength, and muscle repair. A cool, dark bedroom and winding down 30 minutes before sleep will help.";
+        } else if (lower.includes("blood pressure") || lower.includes("bp") || lower.includes("pulse") || lower.includes("heart")) {
+          reply = "Your vitals are monitored. A resting pulse between 60 to 90 beats per minute and standard blood pressure around 120/80 mmHg indicate healthy equilibrium.";
+        } else if (lower.includes("headache") || lower.includes("dizzy") || lower.includes("pain")) {
+          reply = "I recommend resting in a calm, shaded spot with a fresh glass of water. If discomfort persists or intensifies, please contact your primary doctor or use the Emergency SOS button.";
+        }
       }
 
       return res.json({ text: reply });
@@ -233,10 +263,11 @@ CRITICAL CONCISENESS RULE:
 
     try {
       const response = await generateGeminiContent({
-        preferredModel: "gemini-3.8-flash",
-        contents: `Extract health logs or schedule updates from this casual speech: "${inputStr}". 
+        preferredModel: "gemini-3.1-flash-lite",
+        contents: `Extract health logs or schedule updates from this casual speech in English, Hindi, or Telugu: "${inputStr}". 
         Return a JSON array of objects, where each object MUST have a "type" property.
         Possible action types:
+        - { "type": "log_activity", "activity": "Walking|Yoga|Gardening|Gym|Running", "duration": "30 mins", "steps": "..." }
         - { "type": "add_task", "taskName": "...", "time": "..." }
         - { "type": "log_vitals", "metric": "...", "value": "..." }
         - { "type": "complete_task", "taskName": "..." }
@@ -255,15 +286,29 @@ CRITICAL CONCISENESS RULE:
       const actions: any[] = [];
       const lower = inputStr.toLowerCase();
 
+      // Check activity (walk, walking, yoga, gym, steps, Hindi/Telugu equivalents)
+      if (lower.includes("walk") || lower.includes("टहलना") || lower.includes("वॉक") || lower.includes("నడక") || lower.includes("yoga") || lower.includes("exercise") || lower.includes("कसरत") || lower.includes("వ్యాయామం") || lower.includes("steps")) {
+        const minMatch = lower.match(/(\d+)\s*(mins|min|minutes|minute|మినిట్స్|मिनट)/i);
+        const stepsMatch = lower.match(/(\d+)\s*(steps|कदम|అడుగులు)/i);
+        const dur = minMatch ? `${minMatch[1]} mins` : "30 mins";
+        const actName = lower.includes("yoga") ? "Yoga" : lower.includes("gym") ? "Gym Workout" : "Walking";
+        actions.push({ 
+          type: "log_activity", 
+          activity: actName, 
+          duration: dur,
+          steps: stepsMatch ? stepsMatch[1] : undefined
+        });
+      }
+
       // Check water
-      const waterMatch = lower.match(/(\d+)\s*(glasses|glass|cups|liters|l|ml)\s*of\s*water/i) || lower.match(/drank\s*(\d+)/i);
-      if (waterMatch || lower.includes("water")) {
+      const waterMatch = lower.match(/(\d+)\s*(glasses|glass|cups|liters|l|ml)\s*of\s*water/i) || lower.match(/drank\s*(\d+)/i) || lower.match(/(\d+)\s*(गिलास|ग्लास|గ్లాసులు)/i);
+      if (waterMatch || lower.includes("water") || lower.includes("पानी") || lower.includes("నీరు") || lower.includes("నీళ్లు")) {
         const val = waterMatch ? `${waterMatch[1]} ${waterMatch[2] || "glasses"}` : "1 glass";
         actions.push({ type: "log_vitals", metric: "Hydration", value: val });
       }
 
       // Check medication
-      if (lower.includes("metformin") || lower.includes("medicine") || lower.includes("medication") || lower.includes("pill") || lower.includes("took")) {
+      if (lower.includes("metformin") || lower.includes("medicine") || lower.includes("medication") || lower.includes("pill") || lower.includes("took") || lower.includes("दवा") || lower.includes("మందు")) {
         actions.push({ type: "complete_task", taskName: lower.includes("metformin") ? "Metformin" : "Morning Medication" });
       }
 
@@ -279,9 +324,9 @@ CRITICAL CONCISENESS RULE:
       }
 
       // Check symptoms
-      if (lower.includes("headache")) actions.push({ type: "record_symptom", symptom: "Headache", severity: "mild" });
-      if (lower.includes("fever")) actions.push({ type: "record_symptom", symptom: "Fever", severity: "mild" });
-      if (lower.includes("dizzy") || lower.includes("dizziness")) actions.push({ type: "record_symptom", symptom: "Dizziness", severity: "mild" });
+      if (lower.includes("headache") || lower.includes("सिर दर्द") || lower.includes("తలనెప్పి")) actions.push({ type: "record_symptom", symptom: "Headache", severity: "mild" });
+      if (lower.includes("fever") || lower.includes("बुखार") || lower.includes("జ్వరం")) actions.push({ type: "record_symptom", symptom: "Fever", severity: "mild" });
+      if (lower.includes("dizzy") || lower.includes("dizziness") || lower.includes("चक्कर") || lower.includes("కళ్లు తిరగడం")) actions.push({ type: "record_symptom", symptom: "Dizziness", severity: "mild" });
 
       return res.json({ actions });
     }
@@ -417,10 +462,16 @@ Return ONLY a valid JSON object strictly matching this schema:
   // 8. Audio Transcription
   app.post("/api/gemini/transcribe", requireAuth, async (req: AuthRequest, res: any) => {
     try {
-      const { audio } = req.body;
+      const { audio, language = "English" } = req.body;
       const mimeMatch = audio.match(/^data:(.*);base64,/);
       const mimeType = mimeMatch ? mimeMatch[1] : "audio/webm";
       const base64Data = audio.replace(/^data:.*;base64,/, "");
+
+      const langHint = language === "Telugu" 
+        ? "The user likely speaks Telugu (or English/Hindi)."
+        : language === "Hindi"
+        ? "The user likely speaks Hindi (or English/Telugu)."
+        : "The user may speak English, Hindi, or Telugu.";
 
       const response = await generateGeminiContent({
         preferredModel: "gemini-3.1-flash-lite",
@@ -428,7 +479,15 @@ Return ONLY a valid JSON object strictly matching this schema:
           {
             role: "user",
             parts: [
-              { text: "Listen carefully to this audio recording of a person speaking. Transcribe what they said accurately into plain text. Output ONLY the transcription, without any extra commentary or quotation marks." },
+              { 
+                text: `You are an expert multilingual audio transcriber for health applications. Listen carefully to this audio recording of a person speaking. ${langHint}
+CRITICAL TRANSCRIPTION RULES:
+- If the speaker speaks in Telugu, transcribe verbatim in Telugu script (e.g. 'నేను ఈ రోజు 30 నిమిషాలు నడిచాను మరియు మందులు తీసుకున్నాను').
+- If the speaker speaks in Hindi, transcribe verbatim in Devanagari script (e.g. 'मैंने 30 मिनट वॉक किया और दवा ली').
+- If the speaker speaks in English, transcribe verbatim in English.
+- Do NOT translate into another language. Transcribe EXACTLY what was said in the speaker's own language and script.
+- Output ONLY the transcribed text, without quotation marks, markdown, prefixes, or commentary.` 
+              },
               { inlineData: { data: base64Data, mimeType: mimeType } }
             ]
           }
@@ -466,11 +525,11 @@ Return ONLY a valid JSON object strictly matching this schema:
     if (!hasAnyData && simulateAnomaly === "none") {
       return res.json({
         executiveSummary: "Please login",
-        spokenText: "Please login.",
+        spokenText: "Please login or record your daily health details.",
         statusLevel: "OPTIMAL",
         wellnessScore: 0,
         telemetry: {
-          activity: "No logs recorded",
+          activity: "No activity logged",
           medications: "No logs recorded",
           hydration: "No logs recorded",
           vitals: "No logs recorded",
@@ -496,6 +555,7 @@ Return ONLY a valid JSON object strictly matching this schema:
     const hrLogs = logs.filter((l: any) => l.type === "vitals" && (l.heartRate || (typeof l.data === "string" && (l.data.toLowerCase().includes("bpm") || l.data.toLowerCase().includes("heart")))));
     const medLogs = logs.filter((l: any) => l.type === "medication" || (typeof l.data === "string" && l.data.toLowerCase().includes("med")));
     const sleepLogs = logs.filter((l: any) => l.type === "sleep");
+    const activityLogs = logs.filter((l: any) => l.type === "activity" || (typeof l.data === "string" && (l.data.toLowerCase().includes("walking") || l.data.toLowerCase().includes("mins") || l.data.toLowerCase().includes("steps") || l.data.toLowerCase().includes("yoga") || l.data.toLowerCase().includes("gym") || l.data.toLowerCase().includes("activity"))));
 
     if (waterLogs.length >= 3 && !waterDropDetected) {
       const recentDays = waterLogs.slice(0, 3);
@@ -510,8 +570,13 @@ Return ONLY a valid JSON object strictly matching this schema:
       const waterCount = waterLogs.length;
       const medCount = completedTasks.length + medLogs.length;
       const sleepCount = sleepLogs.length;
+      const activityCount = activityLogs.length;
 
       const summaryParts: string[] = [];
+      if (activityCount > 0) {
+        const latestAct = activityLogs[0].data || "Walking 30 mins";
+        summaryParts.push(`completed ${latestAct}`);
+      }
       if (medCount > 0) summaryParts.push(`took ${medCount} scheduled medication${medCount > 1 ? "s" : ""}`);
       if (waterCount > 0) summaryParts.push(`logged ${waterCount} water intake entry${waterCount > 1 ? "s" : ""}`);
       if (sleepCount > 0) summaryParts.push("recorded steady rest");
@@ -519,6 +584,10 @@ Return ONLY a valid JSON object strictly matching this schema:
       const logSummaryText = summaryParts.length > 0
         ? `${userName} had a productive day! ${capitalizedSubject} ${summaryParts.join(", ")}, and all vital indicators remain calm and stable.`
         : `${userName} has recorded daily health entries today. ${capitalizedSubject} stayed on track with routine medications and vitals.`;
+
+      const latestActivityText = activityCount > 0 
+        ? String(activityLogs[0].data || activityLogs[0].value || "Active today")
+        : "No activity logged";
 
       const fallback = {
         executiveSummary: waterDropDetected 
@@ -534,7 +603,7 @@ Return ONLY a valid JSON object strictly matching this schema:
         statusLevel: (waterDropDetected || hrCreepDetected) ? "ATTENTION_REQUIRED" : "OPTIMAL",
         wellnessScore: waterDropDetected ? 81 : hrCreepDetected ? 79 : 94,
         telemetry: {
-          activity: "Daily routines logged",
+          activity: latestActivityText,
           medications: medCount > 0 ? `${medCount} logged` : "None logged today",
           hydration: waterDropDetected ? "720ml logged (-48% drop)" : waterCount > 0 ? `${waterCount} entries logged` : "Adequate hydration",
           vitals: hrCreepDetected ? "Pulse 89 bpm (+19% creep)" : "Stable baseline",
